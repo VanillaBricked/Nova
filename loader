@@ -1,0 +1,10 @@
+-- Nova Loader
+-- Do not redistribute or modify
+
+local success, err = pcall(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/VanillaBricked/Nova/main/Nova.lua", true))()
+end)
+
+if not success then
+    warn("[Nova] Failed to load: " .. tostring(err))
+end
