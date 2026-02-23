@@ -146,7 +146,7 @@ local Window = Rayfield:CreateWindow({
         SaveKey = true,
         GrabKeyFromSite = false,
         Key = {
-            "NOVA-FREE-2025",
+            "HQHDRTAMNDSOSUI9HSL78BAJRKLIUASLOP",
             "NOVA-PREMIUM-VIP",
             "NOVA-LIFETIME-ELITE"
         }
