@@ -95,7 +95,13 @@ local Window = Rayfield:CreateWindow({
         Note = "Copy this link to get your key:\nhttps://direct-link.net/2303175/rUZPiU7veMCB\n\nFree & Premium tiers available\nKeys save automatically - enter once, play forever",
         FileName = "NovaKey",
         SaveKey = true,
-        GrabKeyFromSite = false,
+        GrabKeyFromSite = true,
+        Actions = {
+            [1] = {
+                Name = "Copy Key Link",
+                Link = "https://direct-link.net/2303175/rUZPiU7veMCB"
+            }
+        },
         Key = {
             "NOVA-FREE-2025",
             "NOVA-PREMIUM-VIP",
