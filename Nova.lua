@@ -1,6 +1,6 @@
 --[[
     ╔══════════════════════════════════════════════════╗
-    ║                 NOVA v1.4                        ║
+    ║                 NOVA v1.5                        ║
     ║         Built with Rayfield UI Library           ║
     ║        For use in YOUR OWN game only             ║
     ╚══════════════════════════════════════════════════╝
@@ -47,7 +47,7 @@ local Aim = {
     Holding = false,
     TeamCheck = false,
     FOV = 150,
-    Smoothness = 10,
+    Smoothness = 0.5,
     TargetPart = "Head",
     ShowFOV = true,
     LockedTarget = nil,
@@ -92,7 +92,7 @@ local Window = Rayfield:CreateWindow({
     KeySettings = {
         Title = "Nova - Authorization Required",
         Subtitle = "Enter your license key to unlock Nova",
-        Note = "Get your key at https://direct-link.net/2303175/rUZPiU7veMCB • Free & Premium tiers available • Keys are saved automatically so you only need to enter once • Join our Discord for support & updates",
+        Note = "Copy this link to get your key:\nhttps://direct-link.net/2303175/rUZPiU7veMCB\n\nFree & Premium tiers available\nKeys save automatically - enter once, play forever",
         FileName = "NovaKey",
         SaveKey = true,
         GrabKeyFromSite = false,
@@ -290,13 +290,19 @@ local function RenderESP()
 end
 
 -- ═══════════════════════════════════════════
--- AIM LOCK (SIMPLE - mousemoverel)
+-- AIM LOCK SYSTEM (FIXED - BindToRenderStep)
 --
--- Uses mousemoverel to move your actual mouse
--- toward the target. This means Roblox's default
--- camera handles everything - weapons stay visible,
--- camera stays normal, it just points at the enemy.
+-- THE FIX: Instead of mousemoverel (which has
+-- sensitivity issues) or Scriptable camera (which
+-- hides weapons), we use BindToRenderStep with
+-- priority 301 (AFTER Roblox's camera at 200).
+-- This lets Roblox do its normal camera thing,
+-- THEN we override the rotation to face the target.
+-- Weapons stay visible. Camera stays normal.
 -- ═══════════════════════════════════════════
+local AIM_BIND_NAME = "NovaAimLock"
+local isAimBound = false
+
 local function GetClosestPlayerInFOV()
     local closest = nil
     local closestDist = Aim.FOV
@@ -314,7 +320,6 @@ local function GetClosestPlayerInFOV()
         local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
         if not onScreen then continue end
 
-        -- Wall check
         if Aim.WallCheck and not IsVisible(part) then continue end
 
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
@@ -326,49 +331,47 @@ local function GetClosestPlayerInFOV()
     return closest
 end
 
-local function DoAimLock()
-    if not Aim.Enabled or not Aim.Holding then
-        Aim.LockedTarget = nil
-        return
-    end
+local function AimLockStep()
+    if not Aim.Enabled or not Aim.Holding then return end
 
-    -- Find target if we don't have one
+    -- Find target if needed
     if not Aim.LockedTarget or not IsAlive(Aim.LockedTarget) then
         Aim.LockedTarget = GetClosestPlayerInFOV()
     end
-
     if not Aim.LockedTarget then return end
 
-    -- Wall check on locked target
     local char = Aim.LockedTarget.Character
     if not char then Aim.LockedTarget = nil; return end
 
     local part = ResolveTargetPart(char, Aim.TargetPart)
     if not part then Aim.LockedTarget = nil; return end
 
+    -- Wall check on locked target
     if Aim.WallCheck and not IsVisible(part) then
         Aim.LockedTarget = nil
         return
     end
 
-    -- Get target screen position
-    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-    if not onScreen then Aim.LockedTarget = nil; return end
+    -- Get current camera position, build a CFrame looking at target
+    local camPos = Camera.CFrame.Position
+    local targetCF = CFrame.lookAt(camPos, part.Position)
 
-    -- Get current mouse/screen center
-    local mousePos = UserInputService:GetMouseLocation()
+    -- Lerp for smoothness then apply
+    Camera.CFrame = Camera.CFrame:Lerp(targetCF, Aim.Smoothness)
+end
 
-    -- Calculate how far to move the mouse
-    local deltaX = screenPos.X - mousePos.X
-    local deltaY = screenPos.Y - mousePos.Y
+local function StartAimBind()
+    if isAimBound then return end
+    -- Priority 301 = runs AFTER Roblox camera controller (200)
+    -- This is the key - Roblox updates camera first, then we override rotation
+    RunService:BindToRenderStep(AIM_BIND_NAME, 301, AimLockStep)
+    isAimBound = true
+end
 
-    -- Apply smoothness (higher = faster lock)
-    local speed = Aim.Smoothness / 10
-    local moveX = deltaX * speed
-    local moveY = deltaY * speed
-
-    -- Move the actual mouse - this is what makes the camera follow naturally
-    mousemoverel(moveX, moveY)
+local function StopAimBind()
+    if not isAimBound then return end
+    RunService:UnbindFromRenderStep(AIM_BIND_NAME)
+    isAimBound = false
 end
 
 -- ═══════════════════════════════════════════
@@ -418,8 +421,15 @@ AimTab:CreateToggle({
     Callback = function(v)
         Aim.Enabled = v
         FOVCircle.Visible = v and Aim.ShowFOV
-        if not v then Aim.Holding = false; Aim.LockedTarget = nil end
-        Notify("Nova", v and "Aim Lock ON (Hold RMB)" or "Aim Lock OFF", 2)
+        if v then
+            StartAimBind()
+            Notify("Nova", "Aim Lock ON (Hold RMB)", 2)
+        else
+            Aim.Holding = false
+            Aim.LockedTarget = nil
+            StopAimBind()
+            Notify("Nova", "Aim Lock OFF", 2)
+        end
     end
 })
 
@@ -427,7 +437,7 @@ AimTab:CreateToggle({
     Name = "Wall Check", CurrentValue = false, Flag = "WallCheck",
     Callback = function(v)
         Aim.WallCheck = v
-        Notify("Nova", v and "Wall Check ON (won't lock through walls)" or "Wall Check OFF (locks through walls)", 2)
+        Notify("Nova", v and "Won't lock through walls" or "Locks through walls", 2)
     end
 })
 
@@ -453,9 +463,9 @@ AimTab:CreateSlider({
 })
 
 AimTab:CreateSlider({
-    Name = "Lock Speed", Range = {1, 10}, Increment = 1, Suffix = "",
-    CurrentValue = 10, Flag = "AimSmooth",
-    Callback = function(v) Aim.Smoothness = v end
+    Name = "Lock Speed", Range = {1, 100}, Increment = 1, Suffix = "%",
+    CurrentValue = 50, Flag = "AimSmooth",
+    Callback = function(v) Aim.Smoothness = v / 100 end
 })
 
 AimTab:CreateSection("Target Part")
@@ -655,6 +665,7 @@ end})
 -- TAB 7: SETTINGS
 -- ═══════════════════════════════════════════
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
+
 SettingsTab:CreateSection("Key System")
 SettingsTab:CreateButton({Name = "📋 Copy Key Link", Callback = function()
     if setclipboard then
@@ -662,22 +673,24 @@ SettingsTab:CreateButton({Name = "📋 Copy Key Link", Callback = function()
         Notify("Nova", "Key link copied to clipboard!", 2)
     end
 end})
+
 SettingsTab:CreateSection("Hub Settings")
 SettingsTab:CreateKeybind({Name = "Toggle UI", CurrentKeybind = "RightControl", Flag = "UIToggle", Callback = function() end})
 SettingsTab:CreateButton({Name = "Destroy Nova", Callback = function()
+    StopAimBind()
     for p in pairs(ESP.Objects) do RemoveESP(p) end
     pcall(function() FOVCircle:Remove() end)
     for _, c in pairs(Connections) do pcall(function() c:Disconnect() end) end
     Rayfield:Destroy()
 end})
-SettingsTab:CreateParagraph({Title = "Nova v1.4",
+SettingsTab:CreateParagraph({Title = "Nova v1.5",
     Content = "Built by Heath\nPowered by Rayfield UI\n\nRightCtrl = Toggle UI\nHold RMB = Lock Aim"})
 
 -- ═══════════════════════════════════════════
 -- MAIN LOOPS
 -- ═══════════════════════════════════════════
 
--- Render: ESP + FOV + Aim Lock
+-- Render: ESP + FOV circle
 Connections.Render = RunService.RenderStepped:Connect(function()
     if Aim.Enabled and Aim.ShowFOV and not Aim.Holding then
         FOVCircle.Position = UserInputService:GetMouseLocation()
@@ -687,7 +700,6 @@ Connections.Render = RunService.RenderStepped:Connect(function()
         FOVCircle.Visible = false
     end
     RenderESP()
-    DoAimLock()
 end)
 
 -- HOLD RMB to lock, RELEASE to unlock
@@ -696,7 +708,7 @@ Connections.AimDown = UserInputService.InputBegan:Connect(function(input, gpe)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         if Aim.Enabled then
             Aim.Holding = true
-            Aim.LockedTarget = nil -- re-acquire fresh target
+            Aim.LockedTarget = nil
         end
     end
 end)
@@ -787,11 +799,14 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
+-- Start aim bind immediately (it checks Aim.Enabled internally)
+StartAimBind()
+
 -- ═══════════════════════════════════════════
 Notify("Nova", "Loaded! Hold RMB to lock aim.", 5)
 print([[
 ╔══════════════════════════════════════╗
-║          NOVA v1.4 LOADED            ║
+║          NOVA v1.5 LOADED            ║
 ║  Hold RMB = Lock | RightCtrl = UI   ║
 ╚══════════════════════════════════════╝
 ]])
