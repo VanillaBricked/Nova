@@ -51,7 +51,8 @@ local Aim = {
     TargetPart = "Head",
     ShowFOV = true,
     LockedTarget = nil,
-    WallCheck = false
+    WallCheck = false,
+    MaxYDiff = 50
 }
 
 local Char = {
@@ -90,7 +91,7 @@ KeyLinkGui.Parent = game:GetService("CoreGui")
 
 local CopyButton = Instance.new("TextButton")
 CopyButton.Size = UDim2.new(0, 220, 0, 45)
-CopyButton.Position = UDim2.new(0.5, -110, 0.75, 0)
+CopyButton.Position = UDim2.new(0.5, -110, 0.55, 0)
 CopyButton.BackgroundColor3 = Color3.fromRGB(30, 120, 255)
 CopyButton.TextColor3 = Color3.new(1, 1, 1)
 CopyButton.Text = "📋  Copy Key Link"
@@ -376,6 +377,12 @@ local function GetClosestPlayerInFOV()
 
         if Aim.WallCheck and not IsVisible(part) then continue end
 
+        -- Skip players way below or above (spawn areas, underground, etc)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local yDiff = math.abs(part.Position.Y - LocalPlayer.Character.HumanoidRootPart.Position.Y)
+            if yDiff > Aim.MaxYDiff then continue end
+        end
+
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
         if dist < closestDist then
             closestDist = dist
@@ -404,6 +411,15 @@ local function AimLockStep()
     if Aim.WallCheck and not IsVisible(part) then
         Aim.LockedTarget = nil
         return
+    end
+
+    -- Drop lock if target is way below/above (spawn area, underground)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local yDiff = math.abs(part.Position.Y - LocalPlayer.Character.HumanoidRootPart.Position.Y)
+        if yDiff > Aim.MaxYDiff then
+            Aim.LockedTarget = nil
+            return
+        end
     end
 
     -- Get current camera position, build a CFrame looking at target
@@ -520,6 +536,12 @@ AimTab:CreateSlider({
     Name = "Lock Speed", Range = {1, 100}, Increment = 1, Suffix = "%",
     CurrentValue = 50, Flag = "AimSmooth",
     Callback = function(v) Aim.Smoothness = v / 100 end
+})
+
+AimTab:CreateSlider({
+    Name = "Max Height Diff", Range = {10, 200}, Increment = 5, Suffix = " studs",
+    CurrentValue = 50, Flag = "AimMaxY",
+    Callback = function(v) Aim.MaxYDiff = v end
 })
 
 AimTab:CreateSection("Target Part")
