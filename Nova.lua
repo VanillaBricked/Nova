@@ -79,6 +79,55 @@ FOVCircle.Color = Color3.fromRGB(255, 255, 255)
 FOVCircle.Radius = Aim.FOV
 
 -- ═══════════════════════════════════════════
+-- KEY LINK COPY BUTTON (shows on key screen)
+-- ═══════════════════════════════════════════
+local KeyLinkGui = Instance.new("ScreenGui")
+KeyLinkGui.Name = "NovaKeyLink"
+KeyLinkGui.ResetOnSpawn = false
+KeyLinkGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+KeyLinkGui.DisplayOrder = 999
+KeyLinkGui.Parent = game:GetService("CoreGui")
+
+local CopyButton = Instance.new("TextButton")
+CopyButton.Size = UDim2.new(0, 220, 0, 45)
+CopyButton.Position = UDim2.new(0.5, -110, 0.75, 0)
+CopyButton.BackgroundColor3 = Color3.fromRGB(30, 120, 255)
+CopyButton.TextColor3 = Color3.new(1, 1, 1)
+CopyButton.Text = "📋  Copy Key Link"
+CopyButton.TextSize = 16
+CopyButton.Font = Enum.Font.GothamBold
+CopyButton.Parent = KeyLinkGui
+CopyButton.AutoButtonColor = true
+
+local CopyCorner = Instance.new("UICorner")
+CopyCorner.CornerRadius = UDim.new(0, 8)
+CopyCorner.Parent = CopyButton
+
+local CopyStroke = Instance.new("UIStroke")
+CopyStroke.Color = Color3.fromRGB(60, 150, 255)
+CopyStroke.Thickness = 1.5
+CopyStroke.Parent = CopyButton
+
+CopyButton.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard("https://direct-link.net/2303175/rUZPiU7veMCB")
+        CopyButton.Text = "✅  Copied!"
+        CopyButton.BackgroundColor3 = Color3.fromRGB(30, 180, 60)
+        task.wait(1.5)
+        CopyButton.Text = "📋  Copy Key Link"
+        CopyButton.BackgroundColor3 = Color3.fromRGB(30, 120, 255)
+    end
+end)
+
+-- Destroy the button after a delay (key screen is gone by then)
+task.spawn(function()
+    task.wait(120)
+    if KeyLinkGui and KeyLinkGui.Parent then
+        KeyLinkGui:Destroy()
+    end
+end)
+
+-- ═══════════════════════════════════════════
 -- RAYFIELD WINDOW
 -- ═══════════════════════════════════════════
 local Window = Rayfield:CreateWindow({
@@ -95,13 +144,7 @@ local Window = Rayfield:CreateWindow({
         Note = "Copy this link to get your key:\nhttps://direct-link.net/2303175/rUZPiU7veMCB\n\nFree & Premium tiers available\nKeys save automatically - enter once, play forever",
         FileName = "NovaKey",
         SaveKey = true,
-        GrabKeyFromSite = true,
-        Actions = {
-            [1] = {
-                Name = "Copy Key Link",
-                Link = "https://direct-link.net/2303175/rUZPiU7veMCB"
-            }
-        },
+        GrabKeyFromSite = false,
         Key = {
             "NOVA-FREE-2025",
             "NOVA-PREMIUM-VIP",
@@ -109,6 +152,11 @@ local Window = Rayfield:CreateWindow({
         }
     }
 })
+
+-- Key accepted, remove the copy button
+if KeyLinkGui and KeyLinkGui.Parent then
+    KeyLinkGui:Destroy()
+end
 
 -- ═══════════════════════════════════════════
 -- UTILITIES
