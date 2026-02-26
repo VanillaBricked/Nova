@@ -46,26 +46,66 @@ for _, k in ipairs(ELITE_KEYS) do table.insert(ALL_KEYS, k) end
 local UserTier = "Free"
 
 local function DetectTier()
-    local success, savedKey = pcall(function()
-        if isfile then
-            if isfile("NovaKey.txt") then
-                return readfile("NovaKey.txt")
-            end
-        end
-        return nil
-    end)
+    -- Check multiple possible paths where Rayfield saves keys
+    local possiblePaths = {
+        "NovaKey.txt",
+        "Rayfield/NovaKey.txt",
+        "RayfieldKey/NovaKey.txt",
+        "Rayfield/Keys/NovaKey.txt",
+    }
 
-    if success and savedKey then
-        savedKey = savedKey:gsub("%s+", "")
+    local savedKey = nil
+
+    for _, path in ipairs(possiblePaths) do
+        local success, result = pcall(function()
+            if isfile and isfile(path) then
+                return readfile(path)
+            end
+            return nil
+        end)
+        if success and result and result ~= "" then
+            savedKey = result
+            break
+        end
+    end
+
+    -- Also try listing files to find it
+    if not savedKey then
+        pcall(function()
+            if isfile and isfile("NovaKey.txt") then
+                savedKey = readfile("NovaKey.txt")
+            end
+        end)
+    end
+
+    if savedKey then
+        -- Strip whitespace, newlines, quotes
+        savedKey = savedKey:gsub("%s+", ""):gsub('"', ""):gsub("'", "")
+
         for _, k in ipairs(ELITE_KEYS) do
-            if savedKey == k then UserTier = "Elite"; return end
+            if savedKey:find(k, 1, true) then UserTier = "Elite"; return end
         end
         for _, k in ipairs(PREMIUM_KEYS) do
-            if savedKey == k then UserTier = "Premium"; return end
+            if savedKey:find(k, 1, true) then UserTier = "Premium"; return end
         end
         for _, k in ipairs(FREE_KEYS) do
-            if savedKey == k then UserTier = "Free"; return end
+            if savedKey:find(k, 1, true) then UserTier = "Free"; return end
         end
+    end
+end
+
+-- Also detect based on which key the user just entered this session
+local function DetectTierFromInput(inputKey)
+    if not inputKey then return end
+    inputKey = inputKey:gsub("%s+", "")
+    for _, k in ipairs(ELITE_KEYS) do
+        if inputKey == k then UserTier = "Elite"; return end
+    end
+    for _, k in ipairs(PREMIUM_KEYS) do
+        if inputKey == k then UserTier = "Premium"; return end
+    end
+    for _, k in ipairs(FREE_KEYS) do
+        if inputKey == k then UserTier = "Free"; return end
     end
 end
 
@@ -210,11 +250,61 @@ local Window = Rayfield:CreateWindow({
     }
 })
 
--- Key accepted, remove the copy button and re-detect tier
+-- Key accepted, remove the copy button and detect tier
 if KeyLinkGui and KeyLinkGui.Parent then
     KeyLinkGui:Destroy()
 end
+
+-- Aggressively detect tier after key is accepted
 DetectTier()
+
+-- If still Free, brute force search every .txt file for elite/premium keys
+if UserTier == "Free" then
+    pcall(function()
+        if listfiles then
+            local function searchFolder(folder)
+                local files = listfiles(folder)
+                for _, file in ipairs(files) do
+                    if file:find("Nova") and file:find(".txt") then
+                        local content = readfile(file)
+                        if content then
+                            DetectTierFromInput(content:gsub("%s+", ""):gsub('"', ""))
+                            if UserTier ~= "Free" then return end
+                        end
+                    end
+                end
+            end
+            pcall(function() searchFolder(".") end)
+            pcall(function() searchFolder("Rayfield") end)
+            pcall(function() searchFolder("RayfieldKey") end)
+        end
+    end)
+end
+
+-- Last resort: if we STILL can't detect, check the workspace folder
+if UserTier == "Free" then
+    pcall(function()
+        if isfolder and isfolder("Rayfield") and listfiles then
+            for _, file in ipairs(listfiles("Rayfield")) do
+                if file:find("Key") or file:find("Nova") then
+                    local content = readfile(file)
+                    if content then
+                        DetectTierFromInput(content:gsub("%s+", ""):gsub('"', ""))
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Give Rayfield a moment to save, then try one more time
+if UserTier == "Free" then
+    task.wait(1)
+    DetectTier()
+end
+
+-- Debug: print detected tier
+print("[Nova] Detected tier: " .. UserTier)
 
 -- ═══════════════════════════════════════════
 -- UTILITIES
@@ -844,6 +934,51 @@ SettingsTab:CreateButton({Name = "📋 Copy Key Link", Callback = function()
         Notify("Nova", "Key link copied!", 2)
     end
 end})
+
+SettingsTab:CreateButton({Name = "🔄 Re-Verify Tier", Callback = function()
+    DetectTier()
+    local tierEmoji2 = UserTier == "Elite" and "👑" or (UserTier == "Premium" and "💎" or "🆓")
+    Notify("Nova", tierEmoji2 .. " Detected: " .. UserTier .. " tier. Rejoin if incorrect.", 4)
+end})
+
+SettingsTab:CreateDropdown({
+    Name = "Manual Tier Override (if auto-detect fails)",
+    Options = {"Free", "Premium", "Elite"},
+    CurrentOption = {UserTier},
+    MultiOption = false,
+    Flag = "TierOverride",
+    Callback = function(v)
+        local pick = type(v) == "table" and v[1] or v
+        -- Verify they actually have the right key before allowing override
+        local savedKey = nil
+        pcall(function()
+            local paths = {"NovaKey.txt", "Rayfield/NovaKey.txt", "RayfieldKey/NovaKey.txt"}
+            for _, p in ipairs(paths) do
+                if isfile and isfile(p) then savedKey = readfile(p):gsub("%s+",""):gsub('"',""); break end
+            end
+        end)
+
+        local valid = false
+        if pick == "Elite" then
+            for _, k in ipairs(ELITE_KEYS) do if savedKey and savedKey:find(k, 1, true) then valid = true end end
+        elseif pick == "Premium" then
+            for _, k in ipairs(PREMIUM_KEYS) do if savedKey and savedKey:find(k, 1, true) then valid = true end end
+            if not valid then
+                for _, k in ipairs(ELITE_KEYS) do if savedKey and savedKey:find(k, 1, true) then valid = true end end
+            end
+        else
+            valid = true
+        end
+
+        if valid then
+            UserTier = pick
+            local e = UserTier == "Elite" and "👑" or (UserTier == "Premium" and "💎" or "🆓")
+            Notify("Nova", e .. " Tier set to " .. UserTier .. "! All features updated.", 3)
+        else
+            Notify("Nova", "⚠️ Your saved key doesn't match " .. pick .. " tier.", 3)
+        end
+    end
+})
 
 SettingsTab:CreateSection("Config (Elite 👑)")
 SettingsTab:CreateButton({Name = "💾 Save Config 👑", Callback = function()
