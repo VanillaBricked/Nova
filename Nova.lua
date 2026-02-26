@@ -1,11 +1,16 @@
 --[[
     ╔══════════════════════════════════════════════════╗
-    ║                 NOVA v1.5                        ║
+    ║                 NOVA v2.0                        ║
     ║         Built with Rayfield UI Library           ║
     ║        For use in YOUR OWN game only             ║
     ╚══════════════════════════════════════════════════╝
     
-    HOLD RMB = Lock aim to nearest player
+    TIERS:
+    Free    → Basic ESP (boxes, names, distance), Speed, Jump, Fullbright, Server Tools
+    Premium → Full ESP (health, tracers, color), Aim Lock, Fly, Noclip, Player Tools
+    Elite   → Everything + Infinite Jump, Wall Check, All Target Parts, Config Save
+    
+    HOLD RMB = Lock aim (Premium+)
     RightCtrl = Toggle UI
 ]]
 
@@ -18,13 +23,61 @@ local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
-
 local LocalPlayer = Players.LocalPlayer
 
 -- ═══════════════════════════════════════════
 -- LOAD RAYFIELD
 -- ═══════════════════════════════════════════
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- ═══════════════════════════════════════════
+-- KEY TIER DETECTION
+-- ═══════════════════════════════════════════
+local FREE_KEYS = {"HQHDRTAMNDSOSUI9HSL78BAJRKLIUASLOP"}
+local PREMIUM_KEYS = {"NOVA-PREMIUM-VIP"}
+local ELITE_KEYS = {"NOVA-LIFETIME-ELITE"}
+
+local ALL_KEYS = {}
+for _, k in ipairs(FREE_KEYS) do table.insert(ALL_KEYS, k) end
+for _, k in ipairs(PREMIUM_KEYS) do table.insert(ALL_KEYS, k) end
+for _, k in ipairs(ELITE_KEYS) do table.insert(ALL_KEYS, k) end
+
+-- Try to read saved key to detect tier
+local UserTier = "Free"
+
+local function DetectTier()
+    local success, savedKey = pcall(function()
+        if isfile then
+            if isfile("NovaKey.txt") then
+                return readfile("NovaKey.txt")
+            end
+        end
+        return nil
+    end)
+
+    if success and savedKey then
+        savedKey = savedKey:gsub("%s+", "")
+        for _, k in ipairs(ELITE_KEYS) do
+            if savedKey == k then UserTier = "Elite"; return end
+        end
+        for _, k in ipairs(PREMIUM_KEYS) do
+            if savedKey == k then UserTier = "Premium"; return end
+        end
+        for _, k in ipairs(FREE_KEYS) do
+            if savedKey == k then UserTier = "Free"; return end
+        end
+    end
+end
+
+DetectTier()
+
+local function IsPremium()
+    return UserTier == "Premium" or UserTier == "Elite"
+end
+
+local function IsElite()
+    return UserTier == "Elite"
+end
 
 -- ═══════════════════════════════════════════
 -- STATE
@@ -120,7 +173,6 @@ CopyButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Destroy the button after a delay (key screen is gone by then)
 task.spawn(function()
     task.wait(120)
     if KeyLinkGui and KeyLinkGui.Parent then
@@ -138,6 +190,7 @@ local Window = Rayfield:CreateWindow({
     Theme = "Ocean",
     DisableRayFieldPrompts = false,
     DisableBuildWarnings = false,
+
     KeySystem = true,
     KeySettings = {
         Title = "Nova - Authorization Required",
@@ -146,24 +199,40 @@ local Window = Rayfield:CreateWindow({
         FileName = "NovaKey",
         SaveKey = true,
         GrabKeyFromSite = false,
-        Key = {
-            "HQHDRTAMNDSOSUI9HSL78BAJRKLIUASLOP",
-            "NOVA-PREMIUM-VIP",
-            "NOVA-LIFETIME-ELITE"
-        }
+        Key = ALL_KEYS
+    },
+
+    -- Config saving (Elite feature, but we save for all - Elite gets load)
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "NovaConfigs",
+        FileName = "NovaSettings"
     }
 })
 
--- Key accepted, remove the copy button
+-- Key accepted, remove the copy button and re-detect tier
 if KeyLinkGui and KeyLinkGui.Parent then
     KeyLinkGui:Destroy()
 end
+DetectTier()
 
 -- ═══════════════════════════════════════════
 -- UTILITIES
 -- ═══════════════════════════════════════════
 local function Notify(title, content, duration)
     Rayfield:Notify({Title = title, Content = content, Duration = duration or 3, Image = 4483362458})
+end
+
+local function TierLock(requiredTier)
+    if requiredTier == "Premium" and not IsPremium() then
+        Notify("Nova", "⚠️ Premium feature! Upgrade your key to unlock.", 3)
+        return true
+    end
+    if requiredTier == "Elite" and not IsElite() then
+        Notify("Nova", "👑 Elite feature! Upgrade to Elite to unlock.", 3)
+        return true
+    end
+    return false
 end
 
 local function IsAlive(player)
@@ -295,6 +364,7 @@ local function RenderESP()
         local boxX = rootPos.X - boxW / 2
         local boxY = topPos.Y
 
+        -- Boxes (Free)
         if ESP.ShowBox then
             data.BoxOutline.Size = Vector2.new(boxW, boxH)
             data.BoxOutline.Position = Vector2.new(boxX, boxY)
@@ -305,19 +375,22 @@ local function RenderESP()
             data.Box.Visible = true
         else data.Box.Visible = false; data.BoxOutline.Visible = false end
 
+        -- Names (Free)
         if ESP.ShowNames then
             data.Name.Text = player.DisplayName
             data.Name.Position = Vector2.new(rootPos.X, boxY - 16)
             data.Name.Visible = true
         else data.Name.Visible = false end
 
+        -- Distance (Free)
         if ESP.ShowDistance then
             data.Distance.Text = "[" .. math.floor(dist) .. "m]"
             data.Distance.Position = Vector2.new(rootPos.X, boxY + boxH + 2)
             data.Distance.Visible = true
         else data.Distance.Visible = false end
 
-        if ESP.ShowHealth then
+        -- Health (Premium+)
+        if ESP.ShowHealth and IsPremium() then
             local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             local barX = boxX - 5
             data.HealthBG.From = Vector2.new(barX, boxY)
@@ -335,7 +408,8 @@ local function RenderESP()
             data.HealthBG.Visible = false; data.HealthBar.Visible = false; data.HealthText.Visible = false
         end
 
-        if ESP.ShowTracers then
+        -- Tracers (Premium+)
+        if ESP.ShowTracers and IsPremium() then
             data.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
             data.Tracer.To = Vector2.new(rootPos.X, boxY + boxH)
             data.Tracer.Color = ESP.Color
@@ -345,15 +419,7 @@ local function RenderESP()
 end
 
 -- ═══════════════════════════════════════════
--- AIM LOCK SYSTEM (FIXED - BindToRenderStep)
---
--- THE FIX: Instead of mousemoverel (which has
--- sensitivity issues) or Scriptable camera (which
--- hides weapons), we use BindToRenderStep with
--- priority 301 (AFTER Roblox's camera at 200).
--- This lets Roblox do its normal camera thing,
--- THEN we override the rotation to face the target.
--- Weapons stay visible. Camera stays normal.
+-- AIM LOCK SYSTEM (Premium+)
 -- ═══════════════════════════════════════════
 local AIM_BIND_NAME = "NovaAimLock"
 local isAimBound = false
@@ -377,7 +443,6 @@ local function GetClosestPlayerInFOV()
 
         if Aim.WallCheck and not IsVisible(part) then continue end
 
-        -- Skip players way below or above (spawn areas, underground, etc)
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local yDiff = math.abs(part.Position.Y - LocalPlayer.Character.HumanoidRootPart.Position.Y)
             if yDiff > Aim.MaxYDiff then continue end
@@ -393,9 +458,8 @@ local function GetClosestPlayerInFOV()
 end
 
 local function AimLockStep()
-    if not Aim.Enabled or not Aim.Holding then return end
+    if not Aim.Enabled or not Aim.Holding or not IsPremium() then return end
 
-    -- Find target if needed
     if not Aim.LockedTarget or not IsAlive(Aim.LockedTarget) then
         Aim.LockedTarget = GetClosestPlayerInFOV()
     end
@@ -407,33 +471,24 @@ local function AimLockStep()
     local part = ResolveTargetPart(char, Aim.TargetPart)
     if not part then Aim.LockedTarget = nil; return end
 
-    -- Wall check on locked target
     if Aim.WallCheck and not IsVisible(part) then
-        Aim.LockedTarget = nil
-        return
+        Aim.LockedTarget = nil; return
     end
 
-    -- Drop lock if target is way below/above (spawn area, underground)
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         local yDiff = math.abs(part.Position.Y - LocalPlayer.Character.HumanoidRootPart.Position.Y)
         if yDiff > Aim.MaxYDiff then
-            Aim.LockedTarget = nil
-            return
+            Aim.LockedTarget = nil; return
         end
     end
 
-    -- Get current camera position, build a CFrame looking at target
     local camPos = Camera.CFrame.Position
     local targetCF = CFrame.lookAt(camPos, part.Position)
-
-    -- Lerp for smoothness then apply
     Camera.CFrame = Camera.CFrame:Lerp(targetCF, Aim.Smoothness)
 end
 
 local function StartAimBind()
     if isAimBound then return end
-    -- Priority 301 = runs AFTER Roblox camera controller (200)
-    -- This is the key - Roblox updates camera first, then we override rotation
     RunService:BindToRenderStep(AIM_BIND_NAME, 301, AimLockStep)
     isAimBound = true
 end
@@ -448,7 +503,7 @@ end
 -- TAB 1: ESP
 -- ═══════════════════════════════════════════
 local ESPTab = Window:CreateTab("ESP", 4483362458)
-ESPTab:CreateSection("ESP Controls")
+ESPTab:CreateSection("ESP Controls (Free)")
 
 ESPTab:CreateToggle({
     Name = "Enable ESP", CurrentValue = false, Flag = "ESPToggle",
@@ -468,56 +523,60 @@ ESPTab:CreateToggle({
 ESPTab:CreateToggle({Name = "Boxes", CurrentValue = true, Flag = "ESPBox", Callback = function(v) ESP.ShowBox = v end})
 ESPTab:CreateToggle({Name = "Names", CurrentValue = true, Flag = "ESPNames", Callback = function(v) ESP.ShowNames = v end})
 ESPTab:CreateToggle({Name = "Distance", CurrentValue = true, Flag = "ESPDist", Callback = function(v) ESP.ShowDistance = v end})
-ESPTab:CreateToggle({Name = "Health Bars", CurrentValue = true, Flag = "ESPHealth", Callback = function(v) ESP.ShowHealth = v end})
-ESPTab:CreateToggle({Name = "Tracers", CurrentValue = false, Flag = "ESPTracers", Callback = function(v) ESP.ShowTracers = v end})
 ESPTab:CreateToggle({Name = "Team Check", CurrentValue = false, Flag = "ESPTeam", Callback = function(v) ESP.TeamCheck = v end})
 ESPTab:CreateSlider({
     Name = "Max Distance", Range = {100, 5000}, Increment = 50, Suffix = " studs",
     CurrentValue = 1000, Flag = "ESPMaxDist", Callback = function(v) ESP.MaxDistance = v end
 })
-ESPTab:CreateColorPicker({
-    Name = "ESP Color", Color = Color3.fromRGB(0, 255, 170), Flag = "ESPColor",
-    Callback = function(v) ESP.Color = v end
+
+ESPTab:CreateSection("ESP Premium Features 💎")
+
+ESPTab:CreateToggle({Name = "Health Bars 💎", CurrentValue = true, Flag = "ESPHealth",
+    Callback = function(v)
+        if TierLock("Premium") then return end
+        ESP.ShowHealth = v
+    end
+})
+ESPTab:CreateToggle({Name = "Tracers 💎", CurrentValue = false, Flag = "ESPTracers",
+    Callback = function(v)
+        if TierLock("Premium") then return end
+        ESP.ShowTracers = v
+    end
+})
+ESPTab:CreateColorPicker({Name = "ESP Color 💎", Color = Color3.fromRGB(0, 255, 170), Flag = "ESPColor",
+    Callback = function(v)
+        if TierLock("Premium") then return end
+        ESP.Color = v
+    end
 })
 
 -- ═══════════════════════════════════════════
--- TAB 2: AIM LOCK
+-- TAB 2: AIM LOCK (Premium+)
 -- ═══════════════════════════════════════════
-local AimTab = Window:CreateTab("Aim Lock", 4483362458)
-AimTab:CreateSection("Aim Lock")
+local AimTab = Window:CreateTab("Aim Lock 💎", 4483362458)
+AimTab:CreateSection("Aim Lock (Premium)")
 
 AimTab:CreateToggle({
-    Name = "Enable Aim Lock", CurrentValue = false, Flag = "AimToggle",
+    Name = "Enable Aim Lock 💎", CurrentValue = false, Flag = "AimToggle",
     Callback = function(v)
+        if TierLock("Premium") then return end
         Aim.Enabled = v
         FOVCircle.Visible = v and Aim.ShowFOV
         if v then
             StartAimBind()
             Notify("Nova", "Aim Lock ON (Hold RMB)", 2)
         else
-            Aim.Holding = false
-            Aim.LockedTarget = nil
+            Aim.Holding = false; Aim.LockedTarget = nil
             StopAimBind()
             Notify("Nova", "Aim Lock OFF", 2)
         end
     end
 })
 
-AimTab:CreateToggle({
-    Name = "Wall Check", CurrentValue = false, Flag = "WallCheck",
-    Callback = function(v)
-        Aim.WallCheck = v
-        Notify("Nova", v and "Won't lock through walls" or "Locks through walls", 2)
-    end
-})
+AimTab:CreateToggle({Name = "Team Check", CurrentValue = false, Flag = "AimTeam",
+    Callback = function(v) Aim.TeamCheck = v end})
 
-AimTab:CreateToggle({
-    Name = "Team Check", CurrentValue = false, Flag = "AimTeam",
-    Callback = function(v) Aim.TeamCheck = v end
-})
-
-AimTab:CreateToggle({
-    Name = "Show FOV Circle", CurrentValue = true, Flag = "ShowFOV",
+AimTab:CreateToggle({Name = "Show FOV Circle", CurrentValue = true, Flag = "ShowFOV",
     Callback = function(v)
         Aim.ShowFOV = v
         FOVCircle.Visible = v and Aim.Enabled
@@ -526,28 +585,22 @@ AimTab:CreateToggle({
 
 AimTab:CreateSection("Tuning")
 
-AimTab:CreateSlider({
-    Name = "FOV Radius", Range = {50, 500}, Increment = 10, Suffix = " px",
+AimTab:CreateSlider({Name = "FOV Radius", Range = {50, 500}, Increment = 10, Suffix = " px",
     CurrentValue = 150, Flag = "AimFOV",
-    Callback = function(v) Aim.FOV = v; FOVCircle.Radius = v end
-})
+    Callback = function(v) Aim.FOV = v; FOVCircle.Radius = v end})
 
-AimTab:CreateSlider({
-    Name = "Lock Speed", Range = {1, 100}, Increment = 1, Suffix = "%",
+AimTab:CreateSlider({Name = "Lock Speed", Range = {1, 100}, Increment = 1, Suffix = "%",
     CurrentValue = 50, Flag = "AimSmooth",
-    Callback = function(v) Aim.Smoothness = v / 100 end
-})
+    Callback = function(v) Aim.Smoothness = v / 100 end})
 
-AimTab:CreateSlider({
-    Name = "Max Height Diff", Range = {10, 200}, Increment = 5, Suffix = " studs",
+AimTab:CreateSlider({Name = "Max Height Diff", Range = {10, 200}, Increment = 5, Suffix = " studs",
     CurrentValue = 50, Flag = "AimMaxY",
-    Callback = function(v) Aim.MaxYDiff = v end
-})
+    Callback = function(v) Aim.MaxYDiff = v end})
 
 AimTab:CreateSection("Target Part")
 
 AimTab:CreateDropdown({
-    Name = "Lock To",
+    Name = "Lock To (Head/Torso = Free, rest = Elite 👑)",
     Options = {
         "Head", "Torso", "HumanoidRootPart",
         "Left Arm", "Right Arm",
@@ -558,22 +611,39 @@ AimTab:CreateDropdown({
     MultiOption = false,
     Flag = "AimPart",
     Callback = function(v)
-        Aim.TargetPart = type(v) == "table" and v[1] or v
-        Notify("Nova", "Locking to: " .. Aim.TargetPart, 2)
+        local part = type(v) == "table" and v[1] or v
+        local eliteParts = {["Left Arm"]=true,["Right Arm"]=true,["Left Leg"]=true,["Right Leg"]=true,["Left Foot"]=true,["Right Foot"]=true}
+        if eliteParts[part] and not IsElite() then
+            Notify("Nova", "👑 Elite feature! Limb targeting requires Elite tier.", 3)
+            return
+        end
+        Aim.TargetPart = part
+        Notify("Nova", "Locking to: " .. part, 2)
     end
 })
 
-AimTab:CreateSection("Appearance")
-AimTab:CreateColorPicker({
-    Name = "FOV Circle Color", Color = Color3.fromRGB(255, 255, 255), Flag = "FOVColor",
-    Callback = function(v) FOVCircle.Color = v end
+AimTab:CreateSection("Elite Features 👑")
+
+AimTab:CreateToggle({Name = "Wall Check 👑", CurrentValue = false, Flag = "WallCheck",
+    Callback = function(v)
+        if TierLock("Elite") then return end
+        Aim.WallCheck = v
+        Notify("Nova", v and "Won't lock through walls" or "Locks through walls", 2)
+    end
+})
+
+AimTab:CreateColorPicker({Name = "FOV Circle Color 👑", Color = Color3.fromRGB(255, 255, 255), Flag = "FOVColor",
+    Callback = function(v)
+        if TierLock("Elite") then return end
+        FOVCircle.Color = v
+    end
 })
 
 -- ═══════════════════════════════════════════
--- TAB 3: PLAYERS
+-- TAB 3: PLAYERS (Premium+)
 -- ═══════════════════════════════════════════
-local PlayerTab = Window:CreateTab("Players", 4483362458)
-PlayerTab:CreateSection("Player Management")
+local PlayerTab = Window:CreateTab("Players 💎", 4483362458)
+PlayerTab:CreateSection("Player Management (Premium)")
 
 local PlayerDropdown = PlayerTab:CreateDropdown({
     Name = "Select Player", Options = GetPlayerNames(), CurrentOption = {},
@@ -587,13 +657,15 @@ local PlayerDropdown = PlayerTab:CreateDropdown({
 PlayerTab:CreateButton({Name = "Refresh Player List", Callback = function()
     PlayerDropdown:Set(GetPlayerNames()); Notify("Nova", "Refreshed", 2)
 end})
-PlayerTab:CreateButton({Name = "Teleport to Player", Callback = function()
+PlayerTab:CreateButton({Name = "Teleport to Player 💎", Callback = function()
+    if TierLock("Premium") then return end
     if SelectedPlayer and IsAlive(SelectedPlayer) and IsAlive(LocalPlayer) then
         LocalPlayer.Character.HumanoidRootPart.CFrame = SelectedPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 5)
         Notify("Nova", "Teleported to " .. SelectedPlayer.DisplayName, 2)
     else Notify("Nova", "No valid player", 2) end
 end})
-PlayerTab:CreateButton({Name = "Spectate Player", Callback = function()
+PlayerTab:CreateButton({Name = "Spectate Player 💎", Callback = function()
+    if TierLock("Premium") then return end
     if SelectedPlayer and SelectedPlayer.Character then
         local hum = SelectedPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then Camera.CameraSubject = hum; Notify("Nova", "Spectating " .. SelectedPlayer.DisplayName, 2) end
@@ -605,7 +677,8 @@ PlayerTab:CreateButton({Name = "Stop Spectating", Callback = function()
         if hum then Camera.CameraSubject = hum; Notify("Nova", "Back to self", 2) end
     end
 end})
-PlayerTab:CreateButton({Name = "Copy Player Info", Callback = function()
+PlayerTab:CreateButton({Name = "Copy Player Info 💎", Callback = function()
+    if TierLock("Premium") then return end
     if SelectedPlayer and setclipboard then
         setclipboard(string.format("Name: %s | Display: %s | ID: %d | Age: %d days",
             SelectedPlayer.Name, SelectedPlayer.DisplayName, SelectedPlayer.UserId, SelectedPlayer.AccountAge))
@@ -617,7 +690,7 @@ end})
 -- TAB 4: CHARACTER
 -- ═══════════════════════════════════════════
 local CharTab = Window:CreateTab("Character", 4483362458)
-CharTab:CreateSection("Movement")
+CharTab:CreateSection("Movement (Free)")
 
 CharTab:CreateToggle({
     Name = "Speed Hack", CurrentValue = false, Flag = "SpeedToggle",
@@ -641,14 +714,12 @@ CharTab:CreateSlider({Name = "Jump Power", Range = {50, 300}, Increment = 5, Suf
         end
     end
 })
-CharTab:CreateToggle({Name = "Infinite Jump", CurrentValue = false, Flag = "InfJump",
-    Callback = function(v) Char.InfJumpEnabled = v; Notify("Nova", v and "Inf Jump ON" or "Inf Jump OFF", 2) end})
-CharTab:CreateToggle({Name = "Noclip", CurrentValue = false, Flag = "Noclip",
-    Callback = function(v) Char.NoclipEnabled = v; Notify("Nova", v and "Noclip ON" or "Noclip OFF", 2) end})
 
-CharTab:CreateSection("Fly")
-CharTab:CreateToggle({Name = "Fly", CurrentValue = false, Flag = "FlyToggle",
+CharTab:CreateSection("Premium Movement 💎")
+
+CharTab:CreateToggle({Name = "Fly 💎", CurrentValue = false, Flag = "FlyToggle",
     Callback = function(v)
+        if TierLock("Premium") then return end
         Char.FlyEnabled = v
         if not v and LocalPlayer.Character then
             local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -663,6 +734,22 @@ CharTab:CreateToggle({Name = "Fly", CurrentValue = false, Flag = "FlyToggle",
 CharTab:CreateSlider({Name = "Fly Speed", Range = {10, 200}, Increment = 5, Suffix = "",
     CurrentValue = 50, Flag = "FlySpeed", Callback = function(v) Char.FlySpeed = v end})
 
+CharTab:CreateToggle({Name = "Noclip 💎", CurrentValue = false, Flag = "Noclip",
+    Callback = function(v)
+        if TierLock("Premium") then return end
+        Char.NoclipEnabled = v; Notify("Nova", v and "Noclip ON" or "Noclip OFF", 2)
+    end
+})
+
+CharTab:CreateSection("Elite Movement 👑")
+
+CharTab:CreateToggle({Name = "Infinite Jump 👑", CurrentValue = false, Flag = "InfJump",
+    Callback = function(v)
+        if TierLock("Elite") then return end
+        Char.InfJumpEnabled = v; Notify("Nova", v and "Inf Jump ON" or "Inf Jump OFF", 2)
+    end
+})
+
 CharTab:CreateSection("Other")
 CharTab:CreateButton({Name = "Reset Character", Callback = function()
     if LocalPlayer.Character then
@@ -675,7 +762,7 @@ end})
 -- TAB 5: VISUALS
 -- ═══════════════════════════════════════════
 local VisualsTab = Window:CreateTab("Visuals", 4483362458)
-VisualsTab:CreateSection("Lighting")
+VisualsTab:CreateSection("Lighting (Free)")
 
 VisualsTab:CreateToggle({Name = "Fullbright", CurrentValue = false, Flag = "Fullbright",
     Callback = function(v)
@@ -695,7 +782,7 @@ VisualsTab:CreateSlider({Name = "Time of Day", Range = {0, 24}, Increment = 0.5,
 VisualsTab:CreateSlider({Name = "Fog Distance", Range = {0, 100000}, Increment = 1000, Suffix = " studs",
     CurrentValue = 10000, Flag = "FogDist", Callback = function(v) Lighting.FogEnd = v end})
 
-VisualsTab:CreateSection("World")
+VisualsTab:CreateSection("World (Free)")
 VisualsTab:CreateButton({Name = "Remove Post-Processing", Callback = function()
     local c = 0
     for _, fx in pairs(Lighting:GetChildren()) do
@@ -719,11 +806,11 @@ end})
 -- TAB 6: SERVER
 -- ═══════════════════════════════════════════
 local ServerTab = Window:CreateTab("Server", 4483362458)
-ServerTab:CreateSection("Info")
+ServerTab:CreateSection("Info (Free)")
 ServerTab:CreateParagraph({Title = "Server Info",
     Content = string.format("Players: %d/%d\nGame ID: %d\nVersion: %d",
         #Players:GetPlayers(), Players.MaxPlayers, game.PlaceId, game.PlaceVersion)})
-ServerTab:CreateSection("Actions")
+ServerTab:CreateSection("Actions (Free)")
 ServerTab:CreateButton({Name = "Copy Server Link", Callback = function()
     if setclipboard then
         setclipboard("roblox://experiences/start?placeId=" .. game.PlaceId .. "&gameInstanceId=" .. game.JobId)
@@ -742,12 +829,37 @@ end})
 -- ═══════════════════════════════════════════
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 
+SettingsTab:CreateSection("Your Tier")
+local tierEmoji = UserTier == "Elite" and "👑" or (UserTier == "Premium" and "💎" or "🆓")
+SettingsTab:CreateParagraph({Title = tierEmoji .. " " .. UserTier .. " Tier",
+    Content = UserTier == "Free" and "Basic ESP, Speed, Jump, Fullbright, Server Tools\nUpgrade to Premium for Aim Lock, Fly, Tracers & more!" or
+              UserTier == "Premium" and "Full ESP, Aim Lock, Fly, Noclip, Player Tools\nUpgrade to Elite for Wall Check, Inf Jump, Limb Targeting!" or
+              "All features unlocked. Thank you for your support!"
+})
+
 SettingsTab:CreateSection("Key System")
 SettingsTab:CreateButton({Name = "📋 Copy Key Link", Callback = function()
     if setclipboard then
         setclipboard("https://direct-link.net/2303175/rUZPiU7veMCB")
-        Notify("Nova", "Key link copied to clipboard!", 2)
+        Notify("Nova", "Key link copied!", 2)
     end
+end})
+
+SettingsTab:CreateSection("Config (Elite 👑)")
+SettingsTab:CreateButton({Name = "💾 Save Config 👑", Callback = function()
+    if TierLock("Elite") then return end
+    pcall(function()
+        Rayfield:SaveConfiguration()
+    end)
+    Notify("Nova", "Config saved!", 2)
+end})
+
+SettingsTab:CreateButton({Name = "📂 Load Config 👑", Callback = function()
+    if TierLock("Elite") then return end
+    pcall(function()
+        Rayfield:LoadConfiguration()
+    end)
+    Notify("Nova", "Config loaded!", 2)
 end})
 
 SettingsTab:CreateSection("Hub Settings")
@@ -759,14 +871,12 @@ SettingsTab:CreateButton({Name = "Destroy Nova", Callback = function()
     for _, c in pairs(Connections) do pcall(function() c:Disconnect() end) end
     Rayfield:Destroy()
 end})
-SettingsTab:CreateParagraph({Title = "Nova v1.5",
-    Content = "Built by Heath\nPowered by Rayfield UI\n\nRightCtrl = Toggle UI\nHold RMB = Lock Aim"})
+SettingsTab:CreateParagraph({Title = "Nova v2.0",
+    Content = "Built by Heath\nPowered by Rayfield UI\n\nRightCtrl = Toggle UI\nHold RMB = Lock Aim (Premium+)"})
 
 -- ═══════════════════════════════════════════
 -- MAIN LOOPS
 -- ═══════════════════════════════════════════
-
--- Render: ESP + FOV circle
 Connections.Render = RunService.RenderStepped:Connect(function()
     if Aim.Enabled and Aim.ShowFOV and not Aim.Holding then
         FOVCircle.Position = UserInputService:GetMouseLocation()
@@ -778,11 +888,10 @@ Connections.Render = RunService.RenderStepped:Connect(function()
     RenderESP()
 end)
 
--- HOLD RMB to lock, RELEASE to unlock
 Connections.AimDown = UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        if Aim.Enabled then
+        if Aim.Enabled and IsPremium() then
             Aim.Holding = true
             Aim.LockedTarget = nil
         end
@@ -795,22 +904,20 @@ Connections.AimUp = UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- Noclip
 Connections.Noclip = RunService.Stepped:Connect(function()
-    if Char.NoclipEnabled and LocalPlayer.Character then
+    if Char.NoclipEnabled and IsPremium() and LocalPlayer.Character then
         for _, p in pairs(LocalPlayer.Character:GetDescendants()) do
             if p:IsA("BasePart") then p.CanCollide = false end
         end
     end
 end)
 
--- Speed + Fly
 Connections.Heartbeat = RunService.Heartbeat:Connect(function()
     if Char.SpeedEnabled and LocalPlayer.Character then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then hum.WalkSpeed = Char.SpeedValue end
     end
-    if Char.FlyEnabled and LocalPlayer.Character then
+    if Char.FlyEnabled and IsPremium() and LocalPlayer.Character then
         local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if root then
             local bv = root:FindFirstChild("NovaFlyBV")
@@ -838,15 +945,13 @@ Connections.Heartbeat = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Infinite Jump
 Connections.InfJump = UserInputService.JumpRequest:Connect(function()
-    if Char.InfJumpEnabled and LocalPlayer.Character then
+    if Char.InfJumpEnabled and IsElite() and LocalPlayer.Character then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
     end
 end)
 
--- ESP player handling
 Connections.Join = Players.PlayerAdded:Connect(function(player)
     if ESP.Enabled then CreateESP(player) end
     player.CharacterAdded:Connect(function()
@@ -875,14 +980,18 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
--- Start aim bind immediately (it checks Aim.Enabled internally)
 StartAimBind()
 
 -- ═══════════════════════════════════════════
-Notify("Nova", "Loaded! Hold RMB to lock aim.", 5)
+Notify("Nova", tierEmoji .. " " .. UserTier .. " tier loaded! RightCtrl = UI", 5)
 print([[
-╔══════════════════════════════════════╗
-║          NOVA v1.5 LOADED            ║
-║  Hold RMB = Lock | RightCtrl = UI   ║
-╚══════════════════════════════════════╝
+╔══════════════════════════════════════════════════╗
+║               NOVA v2.0 LOADED                   ║
+║                                                  ║
+║  🆓 Free:    ESP, Speed, Jump, Visuals, Server   ║
+║  💎 Premium: + Aim Lock, Fly, Noclip, Players    ║
+║  👑 Elite:   + Wall Check, Inf Jump, Config Save  ║
+║                                                  ║
+║  RightCtrl = UI | Hold RMB = Lock (Premium+)     ║
+╚══════════════════════════════════════════════════╝
 ]])
